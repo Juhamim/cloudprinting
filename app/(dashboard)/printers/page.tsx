@@ -45,7 +45,7 @@ export default function PrintersPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('Remove this printer? All associated jobs will remain.')) return
+    if (!confirm('Remove this printer? This will permanently delete the printer and all its associated print jobs.')) return
     await fetch(`/api/printers/${id}`, { method: 'DELETE' })
     setPrinters((prev) => prev.filter((p) => p.id !== id))
   }

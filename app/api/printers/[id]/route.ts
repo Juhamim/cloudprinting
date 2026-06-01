@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { deleteFile } from '@/lib/r2'
 
 export async function GET(
   req: NextRequest,
@@ -45,6 +46,28 @@ export async function DELETE(
   const printer = await prisma.printer.findFirst({ where: { id, userId: session.user.id } })
   if (!printer) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // Find all jobs associated with this printer
+  const jobs = await prisma.printJob.findMany({
+    where: { printerId: id },
+  })
+
+  // Delete all job files from R2
+  for (const job of jobs) {
+    if (job.fileKey) {
+      try {
+        await deleteFile(job.fileKey)
+      } catch (err) {
+        console.error(`Failed to delete file from R2 for job ${job.id}:`, err)
+      }
+    }
+  }
+
+  // Delete the jobs from database
+  await prisma.printJob.deleteMany({
+    where: { printerId: id },
+  })
+
+  // Finally delete the printer
   await prisma.printer.delete({ where: { id } })
   return NextResponse.json({ success: true })
 }
