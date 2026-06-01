@@ -211,23 +211,16 @@ export default function HomePage() {
             Cloud<span className="gradient-text">Print</span>
           </span>
         </Link>
-        <div>
-          {isAdminLoggedIn ? (
+        {isAdminLoggedIn && (
+          <div>
             <Link
               href="/dashboard"
               className="bg-blue-500 hover:bg-blue-600 active:scale-95 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 shadow-lg shadow-blue-500/25"
             >
               Admin Dashboard
             </Link>
-          ) : (
-            <Link
-              href="/login"
-              className="bg-zinc-800 hover:bg-zinc-700 active:scale-95 text-zinc-300 hover:text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-150 border border-zinc-700"
-            >
-              Admin Login
-            </Link>
-          )}
-        </div>
+          </div>
+        )}
       </header>
 
       {/* Main Content Area */}
