@@ -84,6 +84,8 @@ model PrintJob {
   paperSize   PaperSize   @default(A4)
   orientation Orientation @default(PORTRAIT)
   priority    Priority    @default(NORMAL)
+  pages       String?
+  pagesPerSheet Int       @default(1)
   userId      String
   printerId   String
   user        User        @relation(fields: [userId], references: [id])

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const session = await auth()
 
   const body = await req.json()
-  const { title, fileUrl, fileKey, fileType, fileSize, printerId, copies, colorMode, paperSize, orientation, priority } = body
+  const { title, fileUrl, fileKey, fileType, fileSize, printerId, copies, colorMode, paperSize, orientation, priority, pages, pagesPerSheet } = body
 
   if (!title || !fileUrl || !printerId) {
     return NextResponse.json({ error: 'title, fileUrl, and printerId are required' }, { status: 400 })
@@ -69,6 +69,8 @@ export async function POST(req: NextRequest) {
       paperSize: paperSize || 'A4',
       orientation: orientation || 'PORTRAIT',
       priority: priority || 'NORMAL',
+      pages: pages || null,
+      pagesPerSheet: pagesPerSheet ? parseInt(String(pagesPerSheet)) || 1 : 1,
       status: 'QUEUED',
     },
     include: { printer: true },
@@ -86,6 +88,8 @@ export async function POST(req: NextRequest) {
       colorMode: job.colorMode,
       paperSize: job.paperSize,
       orientation: job.orientation,
+      pages: job.pages,
+      pagesPerSheet: job.pagesPerSheet,
     },
   })
 

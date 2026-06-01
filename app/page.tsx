@@ -40,6 +40,8 @@ export default function HomePage() {
   const [paperSize, setPaperSize] = useState<PaperSize>('A4')
   const [orientation, setOrientation] = useState<Orientation>('PORTRAIT')
   const [priority, setPriority] = useState<Priority>('NORMAL')
+  const [pages, setPages] = useState('')
+  const [pagesPerSheet, setPagesPerSheet] = useState(1)
 
   // UI/Action states
   const [showAdvanced, setShowAdvanced] = useState(false)
@@ -154,6 +156,8 @@ export default function HomePage() {
           paperSize,
           orientation,
           priority,
+          pages: pages || null,
+          pagesPerSheet,
         }),
       })
 
@@ -178,6 +182,8 @@ export default function HomePage() {
     setPaperSize('A4')
     setOrientation('PORTRAIT')
     setPriority('NORMAL')
+    setPages('')
+    setPagesPerSheet(1)
     setSuccess(false)
     setError('')
   }
@@ -465,6 +471,35 @@ export default function HomePage() {
                           <option value="PORTRAIT">Portrait</option>
                           <option value="LANDSCAPE">Landscape</option>
                         </select>
+                      </div>
+
+                      {/* Pages per Sheet */}
+                      <div className="bg-zinc-900/40 border border-zinc-900 rounded-xl px-3 py-2">
+                        <label className="block text-xs text-zinc-500 mb-1">Pages per Sheet</label>
+                        <select
+                          value={pagesPerSheet}
+                          onChange={(e) => setPagesPerSheet(parseInt(e.target.value) || 1)}
+                          className="w-full bg-transparent text-white font-semibold focus:outline-none appearance-none"
+                        >
+                          <option value="1">1 page</option>
+                          <option value="2">2 pages</option>
+                          <option value="4">4 pages</option>
+                          <option value="6">6 pages</option>
+                          <option value="9">9 pages</option>
+                          <option value="16">16 pages</option>
+                        </select>
+                      </div>
+
+                      {/* Page selection range */}
+                      <div className="col-span-2 bg-zinc-900/40 border border-zinc-900 rounded-xl px-3 py-2">
+                        <label className="block text-xs text-zinc-500 mb-1">Page Range Selection</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 1-3, 5 or empty for all"
+                          value={pages}
+                          onChange={(e) => setPages(e.target.value)}
+                          className="w-full bg-transparent text-white font-semibold focus:outline-none placeholder-zinc-700"
+                        />
                       </div>
                     </div>
                   )}

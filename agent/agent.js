@@ -159,6 +159,13 @@ async function handlePrintJob(job) {
       ...(job.colorMode && {
         monochrome: job.colorMode === 'MONOCHROME',
       }),
+      ...(job.pages && {
+        pages: job.pages,
+      }),
+    }
+
+    if (job.pagesPerSheet && job.pagesPerSheet > 1) {
+      console.log(`[CloudPrint]   Pages Per Sheet requested: ${job.pagesPerSheet} (SumatraPDF printing defaults to printer driver settings for layout)`)
     }
 
     // 3. Print

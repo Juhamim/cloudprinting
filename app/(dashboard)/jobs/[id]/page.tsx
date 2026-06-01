@@ -109,6 +109,8 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             { label: 'Orientation', value: job.orientation },
             { label: 'Priority', value: job.priority },
             { label: 'File size', value: formatBytes(job.fileSize) },
+            { label: 'Page range', value: job.pages || 'All' },
+            { label: 'Pages per sheet', value: `${job.pagesPerSheet} page${job.pagesPerSheet > 1 ? 's' : ''} / sheet` },
           ].map((d) => (
             <div key={d.label} className="bg-zinc-800/60 rounded-xl px-3 py-2.5">
               <dt className="text-xs text-zinc-500 mb-0.5">{d.label}</dt>
