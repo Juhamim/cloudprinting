@@ -16,6 +16,32 @@ const fs = require('fs')
 const path = require('path')
 const os = require('os')
 const { print, getPrinters } = require('pdf-to-printer')
+const PDFDocument = require('pdfkit')
+
+function convertImageToPdf(imagePath, pdfPath) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: 'A4', margin: 0 })
+      const stream = fs.createWriteStream(pdfPath)
+      
+      doc.pipe(stream)
+      
+      // A4 is 595.28 x 841.89 points
+      doc.image(imagePath, 0, 0, {
+        fit: [595.28, 841.89],
+        align: 'center',
+        valign: 'center'
+      })
+      
+      doc.end()
+      
+      stream.on('finish', () => resolve(pdfPath))
+      stream.on('error', (err) => reject(err))
+    } catch (err) {
+      reject(err)
+    }
+  })
+}
 
 // ============================================================
 // CONFIGURE THESE VALUES (Or load via environment variables)
@@ -133,6 +159,8 @@ async function handlePrintJob(job) {
   }
   const ext = extMap[job.fileType] || 'pdf'
   const tmpFile = path.join(os.tmpdir(), `cloudprint-${job.id}.${ext}`)
+  let fileToPrint = tmpFile
+  let convertedPdfFile = null
 
   try {
     // 1. Download the file
@@ -143,6 +171,16 @@ async function handlePrintJob(job) {
     const buffer = await res.arrayBuffer()
     fs.writeFileSync(tmpFile, Buffer.from(buffer))
     console.log(`[CloudPrint]   Downloaded to ${tmpFile}`)
+
+    // 1.5 Convert images to PDF on the fly to prevent blank page issues in SumatraPDF
+    const isImage = ['jpg', 'jpeg', 'png'].includes(ext)
+    if (isImage) {
+      console.log(`[CloudPrint]   Detected image format. Converting to PDF on the fly…`)
+      convertedPdfFile = path.join(os.tmpdir(), `cloudprint-${job.id}-converted.pdf`)
+      await convertImageToPdf(tmpFile, convertedPdfFile)
+      fileToPrint = convertedPdfFile
+      console.log(`[CloudPrint]   Successfully converted image to PDF: ${convertedPdfFile}`)
+    }
 
     // 2. Build print options
     const printOptions = {
@@ -170,16 +208,17 @@ async function handlePrintJob(job) {
 
     // 3. Print
     console.log(`[CloudPrint]   Printing with options:`, JSON.stringify(printOptions))
-    await print(tmpFile, printOptions)
+    await print(fileToPrint, printOptions)
     console.log(`[CloudPrint] ✓ Job ${job.id} printed successfully`)
     await sendStatus(job.id, 'COMPLETED')
   } catch (err) {
     console.error(`[CloudPrint] ✗ Job ${job.id} failed:`, err.message)
     await sendStatus(job.id, 'FAILED', err.message)
   } finally {
-    // Clean up temp file
+    // Clean up temp files
     try {
       if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile)
+      if (convertedPdfFile && fs.existsSync(convertedPdfFile)) fs.unlinkSync(convertedPdfFile)
     } catch (e) {
       // ignore cleanup errors
     }
