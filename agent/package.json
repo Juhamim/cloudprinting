@@ -1,0 +1,14 @@
+{
+  "name": "cloudprint-agent",
+  "version": "1.0.0",
+  "description": "CloudPrint USB printer agent — runs on the printer-connected PC",
+  "main": "agent.js",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "node-fetch": "^3.3.2",
+    "pdf-to-printer": "^5.1.0"
+  }
+}
