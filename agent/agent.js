@@ -80,8 +80,8 @@ async function start() {
   // Initial poll
   await poll()
   
-  // Run interval
-  setInterval(poll, 3000)
+  // Run interval (check for new jobs every 1.5 seconds when idle)
+  setInterval(poll, 1500)
 }
 
 async function poll() {
@@ -107,6 +107,8 @@ async function poll() {
       isPrinting = true
       await handlePrintJob(job)
       isPrinting = false
+      // Poll again immediately to check for more jobs in the queue
+      setTimeout(poll, 50)
     }
   } catch (e) {
     console.error('[CloudPrint] Connection error during poll:', e.message)
