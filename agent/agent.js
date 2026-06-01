@@ -61,18 +61,19 @@ async function start() {
   console.log(`API URL  : ${API_URL}`)
   console.log('')
 
-  // List available printers on startup
-  try {
-    const printers = await getPrinters()
-    console.log(`[CloudPrint] Available printers (${printers.length}):`)
-    printers.forEach((p, i) => console.log(`  ${i + 1}. ${p.name}${p.isDefault ? ' (default)' : ''}`))
-    if (PRINTER_NAME) {
-      const found = printers.find(p => p.name === PRINTER_NAME)
-      if (!found) console.warn(`[CloudPrint] ⚠️  Printer "${PRINTER_NAME}" not found — will use system default`)
-    }
-  } catch (e) {
-    console.warn('[CloudPrint] Could not list printers:', e.message)
-  }
+  // List available printers on startup (non-blocking)
+  getPrinters()
+    .then((printers) => {
+      console.log(`[CloudPrint] Available printers (${printers.length}):`)
+      printers.forEach((p, i) => console.log(`  ${i + 1}. ${p.name}${p.isDefault ? ' (default)' : ''}`))
+      if (PRINTER_NAME) {
+        const found = printers.find((p) => p.name === PRINTER_NAME)
+        if (!found) console.warn(`[CloudPrint] ⚠️  Printer "${PRINTER_NAME}" not found — will use system default`)
+      }
+    })
+    .catch((e) => {
+      console.warn('[CloudPrint] Could not list printers:', e.message)
+    })
 
   console.log(`\n[CloudPrint] Starting background poll loop (every 3 seconds)…`)
   
