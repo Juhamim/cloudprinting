@@ -53,14 +53,20 @@ const nav = [
   },
 ]
 
-export default function Sidebar({ user }: { user: { name?: string | null; email?: string | null; image?: string | null } }) {
+export default function Sidebar({ 
+  user,
+  onClose
+}: { 
+  user: { name?: string | null; email?: string | null; image?: string | null }
+  onClose?: () => void
+}) {
   const pathname = usePathname()
 
   return (
-    <aside className="w-60 bg-zinc-900 border-r border-zinc-800/60 flex flex-col shrink-0">
+    <aside className="w-60 h-full bg-zinc-900 border-r border-zinc-800/60 flex flex-col shrink-0">
       {/* Logo */}
-      <div className="p-5 border-b border-zinc-800/60">
-        <Link href="/dashboard" className="flex items-center gap-2.5">
+      <div className="p-5 border-b border-zinc-800/60 flex items-center justify-between">
+        <Link href="/dashboard" className="flex items-center gap-2.5" onClick={onClose}>
           <div className="w-7 h-7 rounded-lg bg-blue-500 flex items-center justify-center">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="6,9 6,2 18,2 18,9"/>
@@ -72,6 +78,17 @@ export default function Sidebar({ user }: { user: { name?: string | null; email?
             Cloud<span className="text-blue-400">Print</span>
           </span>
         </Link>
+        {onClose && (
+          <button 
+            onClick={onClose} 
+            className="md:hidden text-zinc-500 hover:text-white p-1 rounded-lg hover:bg-zinc-800/60"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
@@ -82,6 +99,7 @@ export default function Sidebar({ user }: { user: { name?: string | null; email?
             <Link
               key={item.href}
               href={item.href}
+              onClick={onClose}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
                 active
                   ? 'bg-blue-500/15 text-blue-400'
