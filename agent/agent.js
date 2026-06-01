@@ -1,14 +1,17 @@
 /**
- * CloudPrint Agent
+ * CloudPrint Agent (HTTP Polling Background Daemon)
  * Runs on the PC connected to your USB printer.
- * Connects to your CloudPrint server via WebSocket and handles print jobs.
+ * Connects to your CloudPrint server via HTTP Polling and handles print jobs.
+ * 
+ * This version uses HTTP Polling instead of WebSockets, making it 100% 
+ * compatible with serverless platforms like Vercel.
  *
  * Setup:
  *   1. npm install
- *   2. Edit the config section below
- *   3. node agent.js
+ *   2. Edit the config section below (or pass via environment variables)
+ *   3. Run with: node agent.js
+ *   4. (Optional) Run in background with PM2: pm2 start agent.js --name "cloudprint-agent"
  */
-const WebSocket = require('ws')
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
@@ -21,79 +24,99 @@ const { print, getPrinters } = require('pdf-to-printer')
 // DO NOT commit your real WS_SECRET here. Instead, set the WS_SECRET
 // environment variable when running the agent, or load it from a .env file.
 const AGENT_ID     = process.env.AGENT_ID     || 'my-home-printer'          // Must match what you entered in the web app
-const WS_URL       = process.env.WS_URL       || 'ws://localhost:3000/ws'    // Change to your deployed URL in production
+const WS_URL       = process.env.WS_URL       || 'ws://localhost:3000/ws'    // Change to your deployed URL (e.g. wss://your-app.vercel.app/ws)
 const WS_SECRET    = process.env.WS_SECRET    || 'e2985ee9693133dd72c4702da4a73e8b469f92cffd5bf25e'  // Must match WS_SECRET in .env.local/WS_SECRET
 const PRINTER_NAME = process.env.PRINTER_NAME || ''                          // Leave blank to use system default. Or set exact printer name.
 // ============================================================
 
-let ws
-let reconnectDelay = 2000
-let heartbeatTimer
+// Convert WS URL to HTTP API endpoint automatically
+let baseUrl = process.env.SERVER_URL || WS_URL
+if (baseUrl.startsWith('ws://')) {
+  baseUrl = baseUrl.replace('ws://', 'http://')
+} else if (baseUrl.startsWith('wss://')) {
+  baseUrl = baseUrl.replace('wss://', 'https://')
+}
+baseUrl = baseUrl.replace(/\/ws$/, '').replace(/\/$/, '')
+const API_URL = `${baseUrl}/api/receiver`
 
-function connect() {
-  const url = `${WS_URL}?agentId=${encodeURIComponent(AGENT_ID)}&secret=${encodeURIComponent(WS_SECRET)}`
-  console.log(`[CloudPrint Agent] Connecting to ${WS_URL}…`)
-  ws = new WebSocket(url)
+let nodeFetch
+async function getFetch() {
+  if (!nodeFetch) {
+    const module = await import('node-fetch')
+    nodeFetch = module.default
+  }
+  return nodeFetch
+}
 
-  ws.on('open', async () => {
-    console.log('[CloudPrint Agent] ✓ Connected to server')
-    reconnectDelay = 2000
+let isPolling = false
+let isPrinting = false
 
-    // List available printers on startup
-    try {
-      const printers = await getPrinters()
-      console.log(`[CloudPrint Agent] Available printers (${printers.length}):`)
-      printers.forEach((p, i) => console.log(`  ${i + 1}. ${p.name}${p.isDefault ? ' (default)' : ''}`))
-      if (PRINTER_NAME) {
-        const found = printers.find(p => p.name === PRINTER_NAME)
-        if (!found) console.warn(`[CloudPrint Agent] ⚠️  Printer "${PRINTER_NAME}" not found — will use system default`)
+async function start() {
+  console.log('╔═══════════════════════════════╗')
+  console.log('║     CloudPrint Agent v1.1     ║')
+  console.log('║   (Background HTTP Polling)   ║')
+  console.log('╚═══════════════════════════════╝')
+  console.log(`Agent ID : ${AGENT_ID}`)
+  console.log(`Server   : ${baseUrl}`)
+  console.log(`API URL  : ${API_URL}`)
+  console.log('')
+
+  // List available printers on startup
+  try {
+    const printers = await getPrinters()
+    console.log(`[CloudPrint] Available printers (${printers.length}):`)
+    printers.forEach((p, i) => console.log(`  ${i + 1}. ${p.name}${p.isDefault ? ' (default)' : ''}`))
+    if (PRINTER_NAME) {
+      const found = printers.find(p => p.name === PRINTER_NAME)
+      if (!found) console.warn(`[CloudPrint] ⚠️  Printer "${PRINTER_NAME}" not found — will use system default`)
+    }
+  } catch (e) {
+    console.warn('[CloudPrint] Could not list printers:', e.message)
+  }
+
+  console.log(`\n[CloudPrint] Starting background poll loop (every 3 seconds)…`)
+  
+  // Initial poll
+  await poll()
+  
+  // Run interval
+  setInterval(poll, 3000)
+}
+
+async function poll() {
+  if (isPolling || isPrinting) return
+  isPolling = true
+
+  try {
+    const fetch = await getFetch()
+    const url = `${API_URL}?agentId=${encodeURIComponent(AGENT_ID)}&secret=${encodeURIComponent(WS_SECRET)}`
+    
+    const res = await fetch(url)
+    if (!res.ok) {
+      if (res.status === 401) {
+        console.error(`[CloudPrint] ✗ Unauthorized! Check if your WS_SECRET matches the server.`)
+      } else {
+        console.error(`[CloudPrint] ✗ Server error (HTTP ${res.status}): ${res.statusText}`)
       }
-    } catch (e) {
-      console.warn('[CloudPrint Agent] Could not list printers:', e.message)
+      return
     }
 
-    // Start heartbeat
-    heartbeatTimer = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'HEARTBEAT', agentId: AGENT_ID }))
-      }
-    }, 30_000)
-  })
-
-  ws.on('message', async (raw) => {
-    try {
-      const msg = JSON.parse(raw.toString())
-      console.log(`[CloudPrint Agent] ← ${msg.type}`)
-
-      if (msg.type === 'PRINT_JOB') {
-        await handlePrintJob(msg.job)
-      }
-      if (msg.type === 'CANCEL_JOB') {
-        console.log(`[CloudPrint Agent] Cancel requested for job ${msg.jobId} (in-progress jobs cannot be cancelled)`)
-      }
-      if (msg.type === 'PONG') {
-        // heartbeat acknowledged
-      }
-    } catch (e) {
-      console.error('[CloudPrint Agent] Message parse error:', e.message)
+    const { job } = await res.json()
+    if (job) {
+      isPrinting = true
+      await handlePrintJob(job)
+      isPrinting = false
     }
-  })
-
-  ws.on('close', (code, reason) => {
-    clearInterval(heartbeatTimer)
-    console.log(`[CloudPrint Agent] Disconnected (${code}). Reconnecting in ${reconnectDelay / 1000}s…`)
-    setTimeout(connect, reconnectDelay)
-    reconnectDelay = Math.min(reconnectDelay * 1.5, 30_000)
-  })
-
-  ws.on('error', (err) => {
-    console.error('[CloudPrint Agent] WebSocket error:', err.message)
-  })
+  } catch (e) {
+    console.error('[CloudPrint] Connection error during poll:', e.message)
+  } finally {
+    isPolling = false
+  }
 }
 
 async function handlePrintJob(job) {
-  console.log(`\n[CloudPrint Agent] ▶ Job received: "${job.title}" (${job.id})`)
-  sendStatus(job.id, 'PRINTING')
+  console.log(`\n[CloudPrint] ▶ Job received: "${job.title}" (${job.id})`)
+  await sendStatus(job.id, 'PRINTING')
 
   // Determine file extension
   const extMap = {
@@ -110,13 +133,13 @@ async function handlePrintJob(job) {
 
   try {
     // 1. Download the file
-    console.log(`[CloudPrint Agent]   Downloading file…`)
-    const { default: fetch } = await import('node-fetch')
+    console.log(`[CloudPrint]   Downloading file…`)
+    const fetch = await getFetch()
     const res = await fetch(job.fileUrl)
     if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`)
     const buffer = await res.arrayBuffer()
     fs.writeFileSync(tmpFile, Buffer.from(buffer))
-    console.log(`[CloudPrint Agent]   Downloaded to ${tmpFile}`)
+    console.log(`[CloudPrint]   Downloaded to ${tmpFile}`)
 
     // 2. Build print options
     const printOptions = {
@@ -136,13 +159,13 @@ async function handlePrintJob(job) {
     }
 
     // 3. Print
-    console.log(`[CloudPrint Agent]   Printing with options:`, JSON.stringify(printOptions))
+    console.log(`[CloudPrint]   Printing with options:`, JSON.stringify(printOptions))
     await print(tmpFile, printOptions)
-    console.log(`[CloudPrint Agent] ✓ Job ${job.id} printed successfully`)
-    sendStatus(job.id, 'COMPLETED')
+    console.log(`[CloudPrint] ✓ Job ${job.id} printed successfully`)
+    await sendStatus(job.id, 'COMPLETED')
   } catch (err) {
-    console.error(`[CloudPrint Agent] ✗ Job ${job.id} failed:`, err.message)
-    sendStatus(job.id, 'FAILED', err.message)
+    console.error(`[CloudPrint] ✗ Job ${job.id} failed:`, err.message)
+    await sendStatus(job.id, 'FAILED', err.message)
   } finally {
     // Clean up temp file
     try {
@@ -153,18 +176,32 @@ async function handlePrintJob(job) {
   }
 }
 
-function sendStatus(jobId, status, error) {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ type: 'JOB_STATUS', jobId, status, ...(error && { error }) }))
-    console.log(`[CloudPrint Agent] → JOB_STATUS ${jobId} = ${status}`)
+async function sendStatus(jobId, status, error) {
+  try {
+    const fetch = await getFetch()
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${WS_SECRET}`
+      },
+      body: JSON.stringify({
+        jobId,
+        status,
+        secret: WS_SECRET,
+        ...(error && { error })
+      })
+    })
+    
+    if (res.ok) {
+      console.log(`[CloudPrint] → Status updated: ${status}`)
+    } else {
+      console.error(`[CloudPrint] ✗ Failed to update status on server (HTTP ${res.status})`)
+    }
+  } catch (e) {
+    console.error('[CloudPrint] Connection error while updating status:', e.message)
   }
 }
 
 // Start the agent
-console.log('╔═══════════════════════════════╗')
-console.log('║     CloudPrint Agent v1.0     ║')
-console.log('╚═══════════════════════════════╝')
-console.log(`Agent ID : ${AGENT_ID}`)
-console.log(`Server   : ${WS_URL}`)
-console.log('')
-connect()
+start()
