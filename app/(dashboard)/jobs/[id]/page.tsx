@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import JobStatusBadge from '@/components/JobStatusBadge'
+import JobActions from '@/components/JobActions'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = { title: 'Job Detail — CloudPrint' }
@@ -120,20 +121,30 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
       {/* File link */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
         <h2 className="text-sm font-semibold text-zinc-400 mb-3 uppercase tracking-wider">File</h2>
-        <a
-          href={job.fileUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 text-sm transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
-            <polyline points="15,3 21,3 21,9"/>
-            <line x1="10" y1="14" x2="21" y2="3"/>
-          </svg>
-          View file
-        </a>
+        {job.fileUrl ? (
+          <a
+            href={job.fileUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-blue-400 hover:text-blue-300 text-sm transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+              <polyline points="15,3 21,3 21,9"/>
+              <line x1="10" y1="14" x2="21" y2="3"/>
+            </svg>
+            View file
+          </a>
+        ) : (
+          <div className="text-zinc-500 text-sm flex items-center gap-2">
+            <span className="text-base">🗑️</span>
+            <span>File cleared from storage (space saved)</span>
+          </div>
+        )}
       </div>
+
+      {/* Actions */}
+      <JobActions jobId={job.id} hasFile={!!job.fileUrl} status={job.status} />
     </div>
   )
 }

@@ -37,6 +37,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: 'jwt',
     maxAge: 365 * 24 * 60 * 60, // 1 year (in seconds)
   },
+  cookies: {
+    sessionToken: {
+      name: process.env.NODE_ENV === 'production' ? '__Secure-authjs.session-token' : 'authjs.session-token',
+      options: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 365 * 24 * 60 * 60, // 1 year (in seconds)
+      },
+    },
+  },
   pages: {
     signIn: '/login',
   },

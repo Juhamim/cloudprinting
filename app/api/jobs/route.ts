@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { sendToAgent } from '@/lib/websocket'
+import { deleteFile } from '@/lib/r2'
 
 export async function GET(req: NextRequest) {
   const session = await auth()
@@ -94,4 +95,46 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ...job, dispatched }, { status: 201 })
+}
+
+export async function DELETE(req: NextRequest) {
+  const session = await auth()
+  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { searchParams } = new URL(req.url)
+  const scope = searchParams.get('scope') || 'all' // 'all' or 'completed'
+
+  const where = {
+    userId: session.user.id,
+    ...(scope === 'completed'
+      ? { status: { in: ['COMPLETED', 'FAILED', 'CANCELLED'] as never[] } }
+      : {}),
+  }
+
+  // Find matching jobs
+  const jobs = await prisma.printJob.findMany({
+    where,
+    include: { printer: true },
+  })
+
+  // Delete files from R2 and cancel active jobs on agent
+  for (const job of jobs) {
+    if (job.fileKey) {
+      try {
+        await deleteFile(job.fileKey)
+      } catch (err) {
+        console.error(`Failed to delete file from R2 for job ${job.id}:`, err)
+      }
+    }
+    if (['QUEUED', 'PROCESSING', 'PRINTING'].includes(job.status)) {
+      try {
+        sendToAgent(job.printer.agentId, { type: 'CANCEL_JOB', jobId: job.id })
+      } catch (err) {
+        console.error(`Failed to send cancel to agent for job ${job.id}:`, err)
+      }
+    }
+  }
+
+  const result = await prisma.printJob.deleteMany({ where })
+  return NextResponse.json({ success: true, count: result.count })
 }
