@@ -53,6 +53,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     signIn: '/login',
   },
   callbacks: {
+    async signIn({ user }) {
+      if (!user.email) return false
+      const userCount = await prisma.user.count()
+      if (userCount >= 1) {
+        const existing = await prisma.user.findUnique({
+          where: { email: user.email },
+        })
+        if (!existing) return false // Deny access (blocks registration)
+      }
+      return true
+    },
     async jwt({ token, user }) {
       if (user) token.id = user.id
       return token

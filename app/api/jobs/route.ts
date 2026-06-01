@@ -34,7 +34,6 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const session = await auth()
-  if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
   const { title, fileUrl, fileKey, fileType, fileSize, printerId, copies, colorMode, paperSize, orientation, priority } = body
@@ -43,21 +42,28 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'title, fileUrl, and printerId are required' }, { status: 400 })
   }
 
-  // Verify printer belongs to this user
+  // Find printer
   const printer = await prisma.printer.findFirst({
-    where: { id: printerId, userId: session.user.id },
+    where: { id: printerId },
   })
   if (!printer) return NextResponse.json({ error: 'Printer not found' }, { status: 404 })
 
+  // Determine owner of the job
+  const userId = session?.user?.id || printer.userId
+
+  // Prefix job title for guests
+  const isAnonymous = !session?.user?.id
+  const finalTitle = isAnonymous ? `[Guest] ${title}` : title
+
   const job = await prisma.printJob.create({
     data: {
-      title,
+      title: finalTitle,
       fileUrl,
       fileKey: fileKey || null,
       fileType: fileType || 'application/pdf',
       fileSize: fileSize || 0,
       printerId,
-      userId: session.user.id,
+      userId,
       copies: copies || 1,
       colorMode: colorMode || 'MONOCHROME',
       paperSize: paperSize || 'A4',

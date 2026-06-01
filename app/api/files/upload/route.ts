@@ -17,9 +17,7 @@ const MAX_SIZE = 50 * 1024 * 1024 // 50 MB
 
 export async function POST(req: NextRequest) {
   const session = await auth()
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const ownerId = session?.user?.id || 'anonymous'
 
   const formData = await req.formData()
   const file = formData.get('file') as File | null
@@ -38,7 +36,7 @@ export async function POST(req: NextRequest) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  const key = `${session.user.id}/${randomUUID()}.${ext}`
+  const key = `${ownerId}/${randomUUID()}.${ext}`
 
   try {
     const url = await uploadFile(key, buffer, file.type)

@@ -13,6 +13,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 })
     }
 
+    const userCount = await prisma.user.count()
+    if (userCount >= 1) {
+      return NextResponse.json({ error: 'Registration is closed. Only one admin user is allowed.' }, { status: 403 })
+    }
+
     const existing = await prisma.user.findUnique({ where: { email } })
     if (existing) {
       return NextResponse.json({ error: 'Email already registered' }, { status: 409 })
