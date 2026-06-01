@@ -6,7 +6,7 @@
     "dev": "next dev --turbopack",
     "dev:ws": "node server.js",
     "build": "next build",
-    "start": "next start",
+    "start": "node server.js",
     "lint": "eslint",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",

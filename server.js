@@ -9,7 +9,7 @@ const next = require('next')
 const { WebSocketServer } = require('ws')
 
 const dev = process.env.NODE_ENV !== 'production'
-const hostname = process.env.HOST || 'localhost'
+const hostname = process.env.HOST || '0.0.0.0'
 const port = parseInt(process.env.PORT || '3000', 10)
 const WS_SECRET = process.env.WS_SECRET || ''
 
