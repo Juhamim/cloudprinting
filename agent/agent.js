@@ -3,20 +3,111 @@
  * Runs on the PC connected to your USB printer.
  * Connects to your CloudPrint server via HTTP Polling and handles print jobs.
  * 
- * This version uses HTTP Polling instead of WebSockets, making it 100% 
- * compatible with serverless platforms like Vercel.
- *
  * Setup:
  *   1. npm install
- *   2. Edit the config section below (or pass via environment variables)
+ *   2. Configure (loads from root .env.local or local .env)
  *   3. Run with: node agent.js
- *   4. (Optional) Run in background with PM2: pm2 start agent.js --name "cloudprint-agent"
+ *   4. Set up as invisible background Windows service using install.bat
  */
 const fs = require('fs')
 const path = require('path')
 const os = require('os')
 const { print, getPrinters } = require('pdf-to-printer')
 const PDFDocument = require('pdfkit')
+
+// ============================================================
+// DUAL-LOGGING & ROTATION SYSTEM
+// ============================================================
+const logFile = path.join(__dirname, 'agent.log')
+
+// Rotate logs on startup if file is too large (> 5MB)
+try {
+  if (fs.existsSync(logFile)) {
+    const stats = fs.statSync(logFile)
+    if (stats.size > 5 * 1024 * 1024) {
+      if (fs.existsSync(logFile + '.old')) {
+        fs.unlinkSync(logFile + '.old')
+      }
+      fs.renameSync(logFile, logFile + '.old')
+    }
+  }
+} catch (e) {
+  // ignore log rotation error
+}
+
+const logStream = fs.createWriteStream(logFile, { flags: 'a' })
+
+const originalLog = console.log
+const originalError = console.error
+const originalWarn = console.warn
+
+function formatMessage(args) {
+  return args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ')
+}
+
+console.log = function(...args) {
+  const msg = formatMessage(args)
+  const timestamp = new Date().toISOString()
+  logStream.write(`[${timestamp}] [INFO] ${msg}\n`)
+  originalLog.apply(console, args)
+}
+
+console.error = function(...args) {
+  const msg = formatMessage(args)
+  const timestamp = new Date().toISOString()
+  logStream.write(`[${timestamp}] [ERROR] ${msg}\n`)
+  originalError.apply(console, args)
+}
+
+console.warn = function(...args) {
+  const msg = formatMessage(args)
+  const timestamp = new Date().toISOString()
+  logStream.write(`[${timestamp}] [WARN] ${msg}\n`)
+  originalWarn.apply(console, args)
+}
+
+// ============================================================
+// ENVIRONMENT VARIABLES LOADER
+// ============================================================
+function loadEnv() {
+  const possiblePaths = [
+    path.join(__dirname, '.env'),
+    path.join(__dirname, '..', '.env.local'),
+    path.join(__dirname, '..', '.env')
+  ];
+  let loaded = false;
+  for (const envPath of possiblePaths) {
+    if (fs.existsSync(envPath)) {
+      try {
+        const content = fs.readFileSync(envPath, 'utf8');
+        content.split(/\r?\n/).forEach(line => {
+          if (line.trim().startsWith('#') || !line.includes('=')) return;
+          const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+          if (match) {
+            const key = match[1];
+            let value = match[2] || '';
+            if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1);
+            if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1);
+            if (process.env[key] === undefined) {
+              process.env[key] = value.trim();
+            }
+          }
+        });
+        console.log(`[CloudPrint] Loaded environment variables from: ${path.basename(envPath)}`);
+        loaded = true;
+        break;
+      } catch (err) {
+        originalWarn.call(console, `[CloudPrint] Failed to load env file ${envPath}:`, err.message);
+      }
+    }
+  }
+  if (!loaded) {
+    console.log('[CloudPrint] No external env configuration found, using hardcoded/process defaults.');
+  }
+}
+
+// Load env before resolving config
+loadEnv()
 
 function convertImageToPdf(imagePath, pdfPath) {
   return new Promise((resolve, reject) => {
@@ -46,12 +137,9 @@ function convertImageToPdf(imagePath, pdfPath) {
 // ============================================================
 // CONFIGURE THESE VALUES (Or load via environment variables)
 // ============================================================
-// WARNING: If you push this to a public repository (GitHub),
-// DO NOT commit your real WS_SECRET here. Instead, set the WS_SECRET
-// environment variable when running the agent, or load it from a .env file.
-const AGENT_ID     = process.env.AGENT_ID     || 'my-home-printer'          // Must match what you entered in the web app
-const WS_URL       = process.env.WS_URL       || 'ws://localhost:3000/ws'    // Change to your deployed URL (e.g. wss://your-app.vercel.app/ws)
-const WS_SECRET    = process.env.WS_SECRET    || 'e2985ee9693133dd72c4702da4a73e8b469f92cffd5bf25e'  // Must match WS_SECRET in .env.local/WS_SECRET
+const AGENT_ID     = process.env.AGENT_ID     || 'my-home-printer'
+const WS_URL       = process.env.WS_URL       || process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3000/ws'
+const WS_SECRET    = process.env.WS_SECRET    || 'e2985ee9693133dd72c4702da4a73e8b469f92cffd5bf25e'
 const PRINTER_NAME = process.env.PRINTER_NAME || ''                          // Leave blank to use system default. Or set exact printer name.
 // ============================================================
 

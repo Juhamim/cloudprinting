@@ -523,7 +523,16 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="w-full max-w-6xl mx-auto px-6 py-6 text-center text-xs text-zinc-600 border-t border-zinc-900 mt-auto">
-        &copy; {new Date().getFullYear()} CloudPrint. Powered by WebSocket and Cloudflare R2.
+        &copy; {new Date().getFullYear()} CloudPrint. Built by{' '}
+        <a
+          href="https://github.com/Juhamim"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-zinc-400 underline decoration-dotted transition-colors"
+        >
+          Juhaim
+        </a>
+        . Powered by WebSocket and Cloudflare R2.
       </footer>
     </div>
   )
