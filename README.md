@@ -162,19 +162,7 @@ Deploy easily using:
 * Encrypted Cloud Storage
 * Access Control Mechanisms
 
----
 
-## 📸 Screenshots
-
-Add screenshots here:
-
-```md
-![Dashboard](screenshots/dashboard.png)
-![Upload Page](screenshots/upload.png)
-![Print Queue](screenshots/printqueue.png)
-```
-
----
 
 ## 🗺️ Roadmap
 
