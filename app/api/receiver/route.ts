@@ -15,9 +15,22 @@ async function authenticateRequest(req: NextRequest, agentId?: string | null, jo
 
     if (secret && wsSecret && secret === wsSecret) {
       if (agentId) {
-        // Authenticating for a specific printer
-        const printer = await prisma.printer.findUnique({ where: { agentId } })
-        if (printer) userId = printer.userId
+        // Authenticating for a specific printer (exact match or prefix)
+        const printer = await prisma.printer.findFirst({
+          where: {
+            OR: [
+              { agentId },
+              { agentId: { startsWith: `${agentId}:` } }
+            ]
+          }
+        })
+        if (printer) {
+          userId = printer.userId
+        } else {
+          // If printer is not registered yet (first run), find the first admin/user in the system
+          const user = await prisma.user.findFirst({ where: { role: 'ADMIN' } }) || await prisma.user.findFirst()
+          if (user) userId = user.id
+        }
       } else if (jobId) {
         // Authenticating for a specific job
         const job = await prisma.printJob.findUnique({ where: { id: jobId } })
@@ -43,32 +56,48 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Verify printer belongs to the authorized user
-  const printer = await prisma.printer.findFirst({
-    where: { agentId, userId },
+  // Verify printer belongs to the authorized user (either exact or prefixed agentId)
+  const printers = await prisma.printer.findMany({
+    where: {
+      userId,
+      OR: [
+        { agentId },
+        { agentId: { startsWith: `${agentId}:` } }
+      ]
+    },
   })
 
-  if (!printer) {
-    return NextResponse.json({ error: 'Printer not found or access denied' }, { status: 404 })
+  if (printers.length === 0) {
+    return NextResponse.json({ job: null })
   }
 
-  // 1. Heartbeat: Update printer status and lastSeen
-  const currentPrinter = await prisma.printer.findUnique({ where: { id: printer.id } })
-  const newStatus = currentPrinter?.status === 'BUSY' ? 'BUSY' : 'ONLINE'
+  const printerIds = printers.map((p) => p.id)
 
-  await prisma.printer.update({
-    where: { id: printer.id },
+  // 1. Heartbeat: Update printer status and lastSeen for all connected printers
+  // Keep BUSY printers busy, update others to ONLINE
+  await prisma.printer.updateMany({
+    where: { id: { in: printerIds }, NOT: { status: 'BUSY' } },
     data: {
-      status: newStatus,
+      status: 'ONLINE',
       lastSeen: new Date(),
     },
   })
 
-  // 2. Poll: Find the oldest QUEUED job for this printer
+  await prisma.printer.updateMany({
+    where: { id: { in: printerIds }, status: 'BUSY' },
+    data: {
+      lastSeen: new Date(),
+    },
+  })
+
+  // 2. Poll: Find the oldest QUEUED job for any of these printers
   const job = await prisma.printJob.findFirst({
     where: {
-      printerId: printer.id,
+      printerId: { in: printerIds },
       status: 'QUEUED',
+    },
+    include: {
+      printer: true,
     },
     orderBy: {
       createdAt: 'asc', // FIFO

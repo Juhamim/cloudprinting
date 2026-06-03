@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self';
+                 script-src 'self';
+                 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+                 font-src 'self' https://fonts.gstatic.com data:;
+                 img-src 'self' data:;
+                 connect-src 'none';">
+  <title>CloudPrint Agent</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ────────────── Setup Overlay ────────────── -->
+  <div id="setup-overlay" class="hidden">
+    <div class="setup-card">
+      <h1>☁️ CloudPrint Agent</h1>
+      <p class="subtitle">Configure your connection to the CloudPrint server to get started.</p>
+      <div class="setup-form">
+        <div class="form-group">
+          <label>Server URL</label>
+          <input id="setup-server-url" class="input" type="url"
+                 placeholder="http://your-server.com:3000">
+          <span class="input-hint">The URL of your CloudPrint server</span>
+        </div>
+        <div class="form-group">
+          <label>WebSocket Secret</label>
+          <input id="setup-ws-secret" class="input mono" type="password"
+                 placeholder="Your WS_SECRET from server .env">
+        </div>
+        <div class="form-group">
+          <label>Agent ID</label>
+          <input id="setup-agent-id" class="input mono" type="text"
+                 placeholder="e.g. office-printer-pc">
+          <span class="input-hint">A unique ID for this machine — no spaces</span>
+        </div>
+        <div id="setup-error" class="badge badge-red" style="display:none"></div>
+        <button id="setup-save-btn" class="btn btn-primary" style="width:100%; justify-content:center; padding:12px;">
+          Save &amp; Connect
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────────────── Title Bar ────────────── -->
+  <div id="titlebar">
+    <div class="logo">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6,9 6,2 18,2 18,9"/>
+        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+        <rect x="6" y="14" width="12" height="8"/>
+      </svg>
+      Cloud<span style="color:var(--blue)">Print</span>
+      <span class="version" id="app-version"></span>
+    </div>
+    <div class="titlebar-actions">
+      <button class="btn-icon" id="btn-minimize" title="Minimize to tray">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ────────────── Update Banner ────────────── -->
+  <div id="update-banner" class="hidden" style="margin: 8px 16px 0;">
+    <span style="font-size:22px;">🚀</span>
+    <div class="update-info">
+      <h3 id="update-title">Update Available</h3>
+      <p id="update-desc">Downloading…</p>
+      <div class="progress-bar" id="update-progress-bar" style="display:none">
+        <div class="progress-fill" id="update-progress-fill" style="width:0%"></div>
+      </div>
+    </div>
+    <button id="update-install-btn" class="btn btn-primary btn-sm" style="display:none">
+      Install &amp; Restart
+    </button>
+  </div>
+
+  <!-- ────────────── Tabs ────────────── -->
+  <div id="tabs">
+    <button class="tab active" data-panel="status">Status</button>
+    <button class="tab" data-panel="jobs">Jobs</button>
+    <button class="tab" data-panel="printers">Printers</button>
+    <button class="tab" data-panel="logs">Logs</button>
+    <button class="tab" data-panel="settings">Settings</button>
+  </div>
+
+  <!-- ────────────── Panels ────────────── -->
+  <div id="panels">
+
+    <!-- STATUS ────────────────────────── -->
+    <div class="panel active" data-panel="status">
+
+      <!-- Hero -->
+      <div class="card" id="status-hero">
+        <div class="status-dot-wrapper">
+          <div class="status-dot offline" id="status-dot">
+            <div class="pulse-ring"></div>
+            <span id="status-icon">🔴</span>
+          </div>
+        </div>
+        <div class="status-info">
+          <h2 id="status-label">Offline</h2>
+          <p id="status-sub">Agent is not running</p>
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <button class="btn btn-primary btn-sm" id="btn-start">▶ Start</button>
+            <button class="btn btn-ghost btn-sm" id="btn-restart">↺ Restart</button>
+            <button class="btn btn-danger btn-sm" id="btn-stop">⏹ Stop</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-completed">0</div>
+          <div class="stat-label">Jobs Completed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-failed" style="color:var(--red)">0</div>
+          <div class="stat-label">Jobs Failed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-printers">0</div>
+          <div class="stat-label">Printers Detected</div>
+        </div>
+      </div>
+
+      <!-- Connection Info -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+              <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/>
+            </svg>
+            Connection
+          </span>
+          <span id="ws-badge" class="badge badge-zinc">WS Disconnected</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:8px; font-size:12px; color:var(--text-muted);">
+          <div style="display:flex; justify-content:space-between;">
+            <span>Server</span>
+            <span id="info-server" style="color:var(--text); font-family:monospace;">—</span>
+          </div>
+          <div style="display:flex; justify-content:space-between;">
+            <span>Agent ID</span>
+            <span id="info-agent-id" style="color:var(--text); font-family:monospace;">—</span>
+          </div>
+          <div style="display:flex; justify-content:space-between;">
+            <span>Poll interval</span>
+            <span id="info-poll" style="color:var(--text);">—</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /status -->
+
+    <!-- JOBS ──────────────────────────── -->
+    <div class="panel" data-panel="jobs">
+      <div class="card" style="flex:1; display:flex; flex-direction:column;">
+        <div class="card-header">
+          <span class="card-title">📋 Print Job History</span>
+          <button class="btn btn-ghost btn-sm" id="btn-clear-history">Clear</button>
+        </div>
+        <div id="jobs-list" style="flex:1; overflow-y:auto;">
+          <div class="empty-state">
+            <div class="emoji">📭</div>
+            <h3>No jobs yet</h3>
+            <p>Print jobs will appear here as they are processed.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PRINTERS ──────────────────────── -->
+    <div class="panel" data-panel="printers">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🖨️ Detected Printers</span>
+          <button class="btn btn-ghost btn-sm" id="btn-refresh-printers">↺ Refresh</button>
+        </div>
+        <div id="printers-list">
+          <div class="empty-state">
+            <div class="emoji">🔍</div>
+            <h3>Scanning…</h3>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGS ──────────────────────────── -->
+    <div class="panel" data-panel="logs">
+      <div class="card" style="flex:1; display:flex; flex-direction:column; gap:12px;">
+        <div class="card-header">
+          <span class="card-title">📟 Live Logs</span>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-ghost btn-sm" id="btn-export-logs">⬇ Export</button>
+            <button class="btn btn-ghost btn-sm" id="btn-open-logs-dir">📂 Open Folder</button>
+            <button class="btn btn-ghost btn-sm" id="btn-clear-logs">✕ Clear</button>
+          </div>
+        </div>
+        <div id="log-viewer"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS ──────────────────────── -->
+    <div class="panel" data-panel="settings">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🔌 Connection</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <div class="form-group">
+            <label>Server URL</label>
+            <input id="cfg-server-url" class="input" type="url" placeholder="http://your-server:3000">
+          </div>
+          <div class="form-group">
+            <label>WebSocket URL</label>
+            <input id="cfg-ws-url" class="input mono" type="text" placeholder="ws://your-server:3000/ws">
+          </div>
+          <div class="form-group">
+            <label>WebSocket Secret</label>
+            <input id="cfg-ws-secret" class="input mono" type="password" placeholder="WS_SECRET">
+          </div>
+          <div class="form-group">
+            <label>Agent ID</label>
+            <input id="cfg-agent-id" class="input mono" type="text" placeholder="my-office-pc">
+            <span class="input-hint">Unique identifier for this agent — no spaces</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🖨️ Printer Override</span>
+        </div>
+        <div class="form-group">
+          <label>Force Printer</label>
+          <select id="cfg-printer-name" class="input">
+            <option value="">Auto (plug-and-play routing)</option>
+          </select>
+          <span class="input-hint">Leave on Auto to use plug-and-play per-printer routing</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">⚙️ Behaviour</span>
+        </div>
+        <div>
+          <div class="toggle-row">
+            <div class="toggle-label">
+              <h3>Start minimised</h3>
+              <p>App opens silently in the system tray</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="cfg-start-minimized">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div class="toggle-label">
+              <h3>Check for updates on start</h3>
+              <p>Silently download and notify of new versions</p>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="cfg-check-updates">
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🔁 Polling</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+          <div class="form-group">
+            <label>Poll interval (ms)</label>
+            <input id="cfg-poll-interval" class="input" type="number" min="500" max="30000" step="500">
+            <span class="input-hint">How often to check for new jobs</span>
+          </div>
+          <div class="form-group">
+            <label>Sync interval (ms)</label>
+            <input id="cfg-sync-interval" class="input" type="number" min="5000" max="60000" step="1000">
+            <span class="input-hint">How often to sync printer list</span>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-primary" id="btn-save-settings" style="flex:1; justify-content:center;">
+          💾 Save Settings
+        </button>
+        <button class="btn btn-ghost" id="btn-check-update">
+          🔍 Check for Update
+        </button>
+      </div>
+
+      <div id="settings-status" class="badge" style="display:none; justify-content:center;"></div>
+
+      <div class="card" style="background:transparent; border-color:var(--surface2);">
+        <div style="font-size:11px; color:var(--text-dim); text-align:center; line-height:1.8;">
+          CloudPrint Agent — <span id="footer-version"></span><br>
+          <span id="settings-path" style="font-family:monospace; word-break:break-all;"></span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /panels -->
+</div><!-- /app -->
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+name: Build & Release CloudPrint Agent
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'   # Trigger on version tags like v1.0.0
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish release to GitHub'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────
+  # Lint
+  # ─────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+  # ─────────────────────────────────────────────────────────
+  # Test
+  # ─────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  # ─────────────────────────────────────────────────────────
+  # Build Windows installer
+  # ─────────────────────────────────────────────────────────
+  build-windows:
+    name: Build Windows Installer
+    runs-on: windows-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows installer (no publish)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') && inputs.publish != 'true' }}
+        run: npm run build:win
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & Publish Windows installer
+        if: ${{ startsWith(github.ref, 'refs/tags/') || inputs.publish == 'true' }}
+        run: npm run build:win:publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudPrint-Agent-Windows
+          path: dist/*.exe
+          retention-days: 30
+
+      - name: Upload YAML metadata (for auto-updater)
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudPrint-Agent-Metadata
+          path: dist/*.yml
+          retention-days: 30
+
+  # ─────────────────────────────────────────────────────────
+  # Create GitHub Release (on tag push)
+  # ─────────────────────────────────────────────────────────
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: build-windows
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CloudPrint-Agent-Windows
+          path: dist/
+
+      - name: Download metadata artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: CloudPrint-Agent-Metadata
+          path: dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: CloudPrint Agent ${{ github.ref_name }}
+          body: |
+            ## CloudPrint Agent ${{ github.ref_name }}
+
+            ### Installation
+            Download the `.exe` installer below and run it. The agent will:
+            - Install with one click
+            - Start automatically with Windows
+            - Run silently in the system tray
+            - Connect to your CloudPrint server
+
+            ### What's New
+            See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
+
+            ### Auto-Update
+            Existing installations will be notified and can update automatically.
+          files: |
+            dist/*.exe
+            dist/*.yml
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

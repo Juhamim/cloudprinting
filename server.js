@@ -8,6 +8,38 @@ const { parse } = require('url')
 const next = require('next')
 const { WebSocketServer } = require('ws')
 
+const fs = require('fs')
+const path = require('path')
+
+function loadEnv() {
+  const possiblePaths = [
+    path.join(__dirname, '.env.local'),
+    path.join(__dirname, '.env'),
+  ]
+  for (const envPath of possiblePaths) {
+    if (fs.existsSync(envPath)) {
+      try {
+        const content = fs.readFileSync(envPath, 'utf8')
+        content.split(/\r?\n/).forEach(line => {
+          if (line.trim().startsWith('#') || !line.includes('=')) return
+          const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/)
+          if (match) {
+            const key = match[1]
+            let value = match[2] || ''
+            if (value.startsWith('"') && value.endsWith('"')) value = value.slice(1, -1)
+            if (value.startsWith("'") && value.endsWith("'")) value = value.slice(1, -1)
+            if (process.env[key] === undefined) {
+              process.env[key] = value.trim()
+            }
+          }
+        })
+        break
+      } catch (err) {}
+    }
+  }
+}
+loadEnv()
+
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = process.env.HOST || '0.0.0.0'
 const port = parseInt(process.env.PORT || '3000', 10)
@@ -43,7 +75,8 @@ app.prepare().then(async () => {
     }
 
     const { agentId, secret } = query
-    if (!agentId || secret !== WS_SECRET) {
+    const expectedSecret = process.env.WS_SECRET || WS_SECRET
+    if (!agentId || secret !== expectedSecret) {
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
       socket.destroy()
       return
